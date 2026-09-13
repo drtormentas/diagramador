@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Diagramador de argumentos</title>
-<!-- versión web 4: apoyos conjuntos con nodo + y exportación PNG recortada -->
+<!-- versión web 5: grupo de contenido + exportación PNG centrada y alta resolución -->
 <style>
   :root{
     --bg:#ffffff;
@@ -575,19 +575,16 @@
   }
 
   function saveDiagramAsPNG() {
-    // Require an actual drawn diagram with nodes.
-    if (!svg.querySelector('g[data-node]')) {
+    const content = svg.querySelector('#diagramContent');
+
+    if (!content || !svg.querySelector('g[data-node]')) {
       setMessage('Primero genera un diagrama para poder guardarlo como imagen.', 'error');
       return;
     }
 
-    // Tight crop around the actual visible diagram.
-    // We use getBBox() on the rendered SVG content, then add padding and
-    // export at higher resolution so the saved image is centered, larger,
-    // and does not waste so much empty space.
     let bbox;
     try {
-      bbox = svg.getBBox();
+      bbox = content.getBBox();
     } catch (err) {
       setMessage('No se pudo calcular el tamaño del diagrama para guardarlo.', 'error');
       return;
@@ -598,71 +595,70 @@
       return;
     }
 
-    const PADDING = 28;
-    const SCALE = 2.5;
+    // Equal padding on all four sides: this is what actually centers the diagram.
+    // Extra room also keeps arrowheads safely inside the image.
+    const PADDING = 42;
+    const baseWidth = Math.ceil(bbox.width + PADDING * 2);
+    const baseHeight = Math.ceil(bbox.height + PADDING * 2);
 
-    const exportWidth = Math.ceil(bbox.width + PADDING * 2);
-    const exportHeight = Math.ceil(bbox.height + PADDING * 2);
+    // Export at genuinely high resolution. Small diagrams are enlarged more;
+    // larger diagrams still get at least a 2x rasterization.
+    const TARGET_LONG_SIDE = 3000;
+    const longSide = Math.max(baseWidth, baseHeight);
+    const SCALE = Math.max(2, Math.min(8, TARGET_LONG_SIDE / longSide));
 
-    const clone = svg.cloneNode(false);
+    const clone = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    clone.setAttribute('width', String(exportWidth));
-    clone.setAttribute('height', String(exportHeight));
-    clone.setAttribute('viewBox', `0 0 ${exportWidth} ${exportHeight}`);
+    clone.setAttribute('width', String(baseWidth));
+    clone.setAttribute('height', String(baseHeight));
+    clone.setAttribute('viewBox', `0 0 ${baseWidth} ${baseHeight}`);
 
-    // White background
     const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     bg.setAttribute('x', '0');
     bg.setAttribute('y', '0');
-    bg.setAttribute('width', String(exportWidth));
-    bg.setAttribute('height', String(exportHeight));
+    bg.setAttribute('width', String(baseWidth));
+    bg.setAttribute('height', String(baseHeight));
     bg.setAttribute('fill', '#ffffff');
     clone.appendChild(bg);
 
-    // Preserve defs (markers, etc.)
     const defs = svg.querySelector('defs');
-    if (defs) {
-      clone.appendChild(defs.cloneNode(true));
-    }
+    if (defs) clone.appendChild(defs.cloneNode(true));
 
-    // Move all visible content so that the bounding box sits nicely inside
-    // the exported image with consistent margins.
     const wrapper = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     wrapper.setAttribute(
       'transform',
-      `translate(${(PADDING - bbox.x).toFixed(2)} ${(PADDING - bbox.y).toFixed(2)})`
+      `translate(${(PADDING - bbox.x).toFixed(3)} ${(PADDING - bbox.y).toFixed(3)})`
     );
 
-    Array.from(svg.childNodes).forEach(node => {
-      if (node.nodeType !== 1) return; // element nodes only
-      if (node.tagName && node.tagName.toLowerCase() === 'defs') return;
-      wrapper.appendChild(node.cloneNode(true));
+    const contentClone = content.cloneNode(true);
+
+    // Do not export the blue "selected node" highlight.
+    contentClone.querySelectorAll('g[data-node] circle').forEach(circle => {
+      circle.setAttribute('fill', '#ffffff');
+      circle.setAttribute('stroke', '#111111');
     });
 
+    wrapper.appendChild(contentClone);
     clone.appendChild(wrapper);
 
     const serializer = new XMLSerializer();
-    let svgText = serializer.serializeToString(clone);
-
-    if (!svgText.includes('xmlns=')) {
-      svgText = svgText.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-    }
-
+    const svgText = serializer.serializeToString(clone);
     const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
 
     const img = new Image();
+
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = Math.ceil(exportWidth * SCALE);
-      canvas.height = Math.ceil(exportHeight * SCALE);
-      const ctx = canvas.getContext('2d');
+      canvas.width = Math.max(1, Math.round(baseWidth * SCALE));
+      canvas.height = Math.max(1, Math.round(baseHeight * SCALE));
 
+      const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
-      ctx.drawImage(img, 0, 0);
 
+      // Draw the vector source scaled to the full high-resolution canvas.
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
 
       canvas.toBlob((pngBlob) => {
@@ -678,8 +674,13 @@
         document.body.appendChild(a);
         a.click();
         a.remove();
-        URL.revokeObjectURL(pngUrl);
-        setMessage('Imagen guardada.', 'ok');
+
+        setTimeout(() => URL.revokeObjectURL(pngUrl), 1000);
+
+        setMessage(
+          `Imagen guardada en alta resolución (${canvas.width} × ${canvas.height} px).`,
+          'ok'
+        );
       }, 'image/png');
     };
 
@@ -717,6 +718,9 @@
     defs.appendChild(marker);
     svg.appendChild(defs);
 
+    const diagramContent = svgEl('g', { id: 'diagramContent' });
+    svg.appendChild(diagramContent);
+
     function addLine(x1,y1,x2,y2, arrow=true) {
       const line = svgEl('line', {
         x1, y1, x2, y2,
@@ -725,7 +729,7 @@
         'stroke-linecap':'round'
       });
       if (arrow) line.setAttribute('marker-end','url(#arrow)');
-      svg.appendChild(line);
+      diagramContent.appendChild(line);
     }
 
     for (const [targetStr, groups] of Object.entries(supports)) {
@@ -798,7 +802,7 @@
 
           jointG.appendChild(plusH);
           jointG.appendChild(plusV);
-          svg.appendChild(jointG);
+          diagramContent.appendChild(jointG);
 
           const outStart = edgePoint(
             junctionX, junctionY, t.x, t.y, JOINT_R
@@ -842,7 +846,7 @@
       label.textContent = n;
 
       g.append(circle,label);
-      svg.appendChild(g);
+      diagramContent.appendChild(g);
 
       const select = () => selectNode(n);
       g.addEventListener('click', select);
@@ -862,7 +866,7 @@
         fill:'#666'
       });
       note.textContent = 'No hay relaciones de apoyo.';
-      svg.appendChild(note);
+      diagramContent.appendChild(note);
     }
   }
 
