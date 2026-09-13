@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagramador de argumentos</title>
+<style>
+  :root{
+    --bg:#ffffff;
+    --panel:#f7f7f8;
+    --border:#d7d7dc;
+    --text:#1f2328;
+    --muted:#666;
+    --accent:#2f5f9f;
+    --accent-soft:#e9eef7;
+    --danger:#b42318;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .app{
+    width:100%;
+    padding:14px;
+  }
+  .title{
+    margin:0 0 4px;
+    font-size:24px;
+    font-weight:700;
+  }
+  .subtitle{
+    margin:0 0 12px;
+    color:var(--muted);
+    font-size:14px;
+  }
+  .workspace{
+    display:grid;
+    grid-template-columns:minmax(360px, 42%) minmax(480px, 58%);
+    gap:12px;
+    align-items:stretch;
+  }
+  .panel{
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:#fff;
+    overflow:hidden;
+  }
+  .panel-header{
+    padding:10px 12px;
+    font-weight:650;
+    background:var(--panel);
+    border-bottom:1px solid var(--border);
+  }
+  .editor-body{
+    padding:10px;
+  }
+  .headers,
+  .row{
+    display:grid;
+    grid-template-columns:38px minmax(180px,1fr) 145px 38px;
+    gap:8px;
+    align-items:start;
+  }
+  .headers{
+    margin-bottom:6px;
+    color:var(--muted);
+    font-size:13px;
+  }
+  .rows{
+    max-height:560px;
+    overflow:auto;
+    padding-right:2px;
+  }
+  .row{
+    margin-bottom:7px;
+  }
+  .num{
+    padding-top:10px;
+    font-weight:650;
+  }
+  textarea,
+  input{
+    width:100%;
+    border:1px solid var(--border);
+    border-radius:7px;
+    font:inherit;
+    color:inherit;
+    background:#fff;
+  }
+  textarea{
+    resize:vertical;
+    min-height:58px;
+    padding:8px 9px;
+  }
+  input{
+    height:40px;
+    padding:0 9px;
+  }
+  textarea:focus,
+  input:focus,
+  button:focus{
+    outline:2px solid rgba(47,95,159,.25);
+    outline-offset:1px;
+  }
+  button{
+    border:1px solid var(--border);
+    border-radius:7px;
+    background:#fff;
+    color:var(--text);
+    font:inherit;
+    cursor:pointer;
+    min-height:38px;
+    padding:7px 11px;
+  }
+  button:hover{background:#f4f4f6}
+  button.primary{
+    background:var(--accent);
+    color:#fff;
+    border-color:var(--accent);
+  }
+  button.primary:hover{filter:brightness(.95)}
+  button.delete{
+    min-width:38px;
+    padding:0;
+    font-size:17px;
+    line-height:1;
+  }
+  .actions{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-top:10px;
+    flex-wrap:wrap;
+  }
+  .count{
+    margin-left:auto;
+    color:var(--muted);
+    font-size:13px;
+  }
+  .right{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    min-width:0;
+  }
+  .diagram-wrap{
+    position:relative;
+    height:590px;
+    overflow:auto;
+    background:#fff;
+  }
+  svg{
+    display:block;
+    min-width:100%;
+    min-height:100%;
+  }
+  .selected{
+    border:1px solid var(--border);
+    border-radius:10px;
+    overflow:hidden;
+  }
+  .selected .label{
+    padding:8px 10px;
+    background:var(--panel);
+    border-bottom:1px solid var(--border);
+    font-weight:650;
+  }
+  .selected .text{
+    min-height:72px;
+    padding:10px;
+    white-space:pre-wrap;
+  }
+  .message{
+    margin-top:9px;
+    min-height:20px;
+    font-size:13px;
+  }
+  .message.error{color:var(--danger)}
+  .message.ok{color:#26734d}
+
+  @media (max-width: 900px){
+    .workspace{
+      grid-template-columns:1fr;
+    }
+    .diagram-wrap{
+      height:500px;
+    }
+  }
+  @media (max-width: 620px){
+    .headers{
+      display:none;
+    }
+    .row{
+      grid-template-columns:32px minmax(0,1fr) 38px;
+    }
+    .row .support{
+      grid-column:2 / 3;
+    }
+    .row .delete{
+      grid-column:3 / 4;
+      grid-row:1 / 2;
+    }
+    .num{
+      grid-row:1 / 3;
+    }
+    .count{
+      width:100%;
+      margin-left:0;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="argument-app">
+  <h1 class="title">Diagramador de argumentos</h1>
+  <p class="subtitle">
+    En “Apoyada por”: usa comas para apoyos independientes y + para premisas conjuntas.
+    Ej.: <code>2+4, 3, 5+6</code>
+  </p>
+
+  <div class="workspace">
+    <section class="panel">
+      <div class="panel-header">Proposiciones</div>
+      <div class="editor-body">
+        <div class="headers">
+          <div>#</div>
+          <div>Texto de la proposición</div>
+          <div>Apoyada por</div>
+          <div></div>
+        </div>
+        <div class="rows" id="rows"></div>
+
+        <div class="actions">
+          <button type="button" id="addBtn">+ Añadir</button>
+          <button type="button" class="primary" id="diagramBtn">Diagramar</button>
+          <button type="button" id="clearBtn">Limpiar diagrama</button>
+          <span class="count" id="count"></span>
+        </div>
+        <div class="message" id="message" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <div class="right">
+      <section class="panel">
+        <div class="panel-header">Diagrama</div>
+        <div class="diagram-wrap" id="diagramWrap">
+          <svg id="svg" role="img" aria-label="Diagrama de argumento"></svg>
+        </div>
+      </section>
+
+      <section class="selected">
+        <div class="label">Texto de la proposición seleccionada</div>
+        <div class="text" id="selectedText"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const MAX = 20;
+  const NODE_R = 23;
+
+  const rowsEl = document.getElementById('rows');
+  const addBtn = document.getElementById('addBtn');
+  const diagramBtn = document.getElementById('diagramBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const countEl = document.getElementById('count');
+  const messageEl = document.getElementById('message');
+  const selectedTextEl = document.getElementById('selectedText');
+  const svg = document.getElementById('svg');
+
+  let rows = [];
+  let graphTexts = {};
+  let selectedNode = null;
+
+  function setMessage(text, type='') {
+    messageEl.textContent = text;
+    messageEl.className = 'message' + (type ? ' ' + type : '');
+  }
+
+  function updateCount() {
+    countEl.textContent = rows.length + (rows.length === 1 ? ' proposición' : ' proposiciones');
+    addBtn.disabled = rows.length >= MAX;
+  }
+
+  function makeRow(text='', support='') {
+    const index = rows.length + 1;
+
+    const rowEl = document.createElement('div');
+    rowEl.className = 'row';
+
+    const numEl = document.createElement('div');
+    numEl.className = 'num';
+    numEl.textContent = index + '.';
+
+    const textEl = document.createElement('textarea');
+    textEl.placeholder = 'Texto de la proposición';
+
+    const supportEl = document.createElement('input');
+    supportEl.className = 'support';
+    supportEl.type = 'text';
+    supportEl.placeholder = 'p. ej. 2+4, 3';
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'delete';
+    delBtn.textContent = '✕';
+    delBtn.title = 'Borrar proposición';
+    delBtn.setAttribute('aria-label', 'Borrar proposición ' + index);
+
+    textEl.value = text;
+    supportEl.value = support;
+
+    rowEl.append(numEl, textEl, supportEl, delBtn);
+    rowsEl.appendChild(rowEl);
+
+    const row = {el: rowEl, numEl, textEl, supportEl, delBtn, number: index};
+    rows.push(row);
+
+    delBtn.addEventListener('click', () => deleteRow(row));
+    updateCount();
+
+    if (rows.length === MAX) addBtn.disabled = true;
+  }
+
+  function deleteRow(row) {
+    const deleted = row.number;
+
+    if (rows.length === 1) {
+      row.textEl.value = '';
+      row.supportEl.value = '';
+      clearDiagram();
+      setMessage('');
+      return;
+    }
+
+    const referencedBy = [];
+    for (const other of rows) {
+      if (other === row) continue;
+      const nums = [...other.supportEl.value.matchAll(/\d+/g)].map(m => Number(m[0]));
+      if (nums.includes(deleted)) referencedBy.push(other.number);
+    }
+
+    if (referencedBy.length) {
+      setMessage(
+        `No se puede borrar la proposición ${deleted}: todavía es usada como apoyo por ${referencedBy.join(', ')}.`,
+        'error'
+      );
+      return;
+    }
+
+    row.el.remove();
+    rows = rows.filter(r => r !== row);
+
+    // Renumber rows and update references to later proposition numbers.
+    rows.forEach((r, i) => {
+      r.number = i + 1;
+      r.numEl.textContent = r.number + '.';
+      r.delBtn.setAttribute('aria-label', 'Borrar proposición ' + r.number);
+
+      r.supportEl.value = r.supportEl.value.replace(/\d+/g, m => {
+        const n = Number(m);
+        return n > deleted ? String(n - 1) : String(n);
+      });
+    });
+
+    updateCount();
+    clearDiagram();
+    setMessage('');
+  }
+
+  function parseSupports(raw, target, existing) {
+    raw = raw.trim();
+    if (!raw) return [];
+
+    if (!/^[0-9,+\s]+$/.test(raw)) {
+      const bad = raw.match(/[^0-9,+\s]/);
+      throw new Error(
+        `Proposición ${target}: carácter no válido “${bad ? bad[0] : '?'}”. Usa sólo números, comas y +.`
+      );
+    }
+
+    const groups = [];
+    const commaParts = raw.split(',');
+
+    for (const rawPart of commaParts) {
+      const part = rawPart.trim();
+      if (!part) {
+        throw new Error(`Proposición ${target}: hay una coma sin un apoyo a uno de sus lados.`);
+      }
+
+      const plusParts = part.split('+');
+      const nums = [];
+
+      for (const tokRaw of plusParts) {
+        const tok = tokRaw.trim();
+        if (!tok) throw new Error(`Proposición ${target}: uso incorrecto de + en “${part}”.`);
+        if (!/^\d+$/.test(tok)) throw new Error(`Proposición ${target}: “${tok}” no es válido.`);
+
+        const n = Number(tok);
+        if (!existing.has(n)) throw new Error(`Proposición ${target}: la proposición ${n} no existe.`);
+        if (n === target) throw new Error(`Proposición ${target}: una proposición no puede apoyarse a sí misma.`);
+        if (nums.includes(n)) {
+          throw new Error(`Proposición ${target}: la proposición ${n} está repetida dentro del mismo apoyo conjunto.`);
+        }
+        nums.push(n);
+      }
+
+      groups.push(nums);
+    }
+
+    const seen = new Set();
+    for (const group of groups) {
+      const key = [...group].sort((a,b)=>a-b).join('+');
+      if (seen.has(key)) {
+        throw new Error(`Proposición ${target}: el apoyo “${group.join('+')}” está repetido.`);
+      }
+      seen.add(key);
+    }
+
+    return groups;
+  }
+
+  function collectData() {
+    const existing = new Set(rows.map(r => r.number));
+    const texts = {};
+    const supports = {};
+
+    for (const r of rows) {
+      texts[r.number] = r.textEl.value.trim() || '(sin texto)';
+      supports[r.number] = parseSupports(r.supportEl.value, r.number, existing);
+    }
+
+    validateNoCycles(supports);
+    return {texts, supports};
+  }
+
+  function validateNoCycles(supports) {
+    const adjacency = {};
+    for (const r of rows) adjacency[r.number] = new Set();
+
+    for (const [targetStr, groups] of Object.entries(supports)) {
+      const target = Number(targetStr);
+      for (const group of groups) {
+        for (const source of group) adjacency[source].add(target);
+      }
+    }
+
+    const state = {};
+    const stack = [];
+    rows.forEach(r => state[r.number] = 0);
+
+    function dfs(node) {
+      state[node] = 1;
+      stack.push(node);
+
+      for (const nxt of adjacency[node]) {
+        if (state[nxt] === 0) {
+          dfs(nxt);
+        } else if (state[nxt] === 1) {
+          const idx = stack.indexOf(nxt);
+          const cycle = stack.slice(idx).concat(nxt);
+          throw new Error(`Se detectó un ciclo de apoyo: ${cycle.join(' → ')}.`);
+        }
+      }
+
+      stack.pop();
+      state[node] = 2;
+    }
+
+    for (const r of rows) {
+      if (state[r.number] === 0) dfs(r.number);
+    }
+  }
+
+  function computeLayout(supports) {
+    const adjacency = {};
+    const indegree = {};
+    rows.forEach(r => {
+      adjacency[r.number] = new Set();
+      indegree[r.number] = 0;
+    });
+
+    for (const [targetStr, groups] of Object.entries(supports)) {
+      const target = Number(targetStr);
+      const sources = new Set(groups.flat());
+      for (const source of sources) {
+        if (!adjacency[source].has(target)) {
+          adjacency[source].add(target);
+          indegree[target]++;
+        }
+      }
+    }
+
+    const queue = rows.map(r => r.number).filter(n => indegree[n] === 0).sort((a,b)=>a-b);
+    const topo = [];
+    const temp = {...indegree};
+
+    while (queue.length) {
+      const node = queue.shift();
+      topo.push(node);
+      [...adjacency[node]].sort((a,b)=>a-b).forEach(nxt => {
+        temp[nxt]--;
+        if (temp[nxt] === 0) queue.push(nxt);
+      });
+    }
+
+    const level = {};
+    rows.forEach(r => level[r.number] = 0);
+
+    for (const node of topo) {
+      for (const nxt of adjacency[node]) {
+        level[nxt] = Math.max(level[nxt], level[node] + 1);
+      }
+    }
+
+    const levels = {};
+    for (const r of rows) {
+      const l = level[r.number];
+      if (!levels[l]) levels[l] = [];
+      levels[l].push(r.number);
+    }
+    Object.values(levels).forEach(arr => arr.sort((a,b)=>a-b));
+
+    const maxCount = Math.max(...Object.values(levels).map(a => a.length), 1);
+    const xSpacing = 125;
+    const ySpacing = 150;
+    const marginX = 90;
+    const marginY = 70;
+
+    const maxLevel = Math.max(...Object.values(level), 0);
+    const width = Math.max(800, marginX*2 + maxCount*xSpacing);
+    const height = Math.max(500, marginY*2 + (maxLevel+1)*ySpacing);
+
+    const positions = {};
+    Object.keys(levels).map(Number).sort((a,b)=>a-b).forEach(l => {
+      const nodes = levels[l];
+      const rowWidth = (nodes.length - 1) * xSpacing;
+      const startX = width/2 - rowWidth/2;
+      const y = marginY + l*ySpacing;
+
+      nodes.forEach((node, i) => {
+        positions[node] = {x:startX + i*xSpacing, y};
+      });
+    });
+
+    return {positions, width, height};
+  }
+
+  function edgePoint(x1, y1, x2, y2, radius) {
+    const dx = x2-x1, dy = y2-y1;
+    const d = Math.hypot(dx,dy) || 1;
+    return {x:x1 + radius*dx/d, y:y1 + radius*dy/d};
+  }
+
+  function svgEl(name, attrs={}) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', name);
+    for (const [k,v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  }
+
+  function clearDiagram() {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    svg.removeAttribute('viewBox');
+    selectedNode = null;
+    selectedTextEl.textContent = '';
+    graphTexts = {};
+  }
+
+  function drawDiagram(texts, supports) {
+    clearDiagram();
+    graphTexts = texts;
+
+    const {positions, width, height} = computeLayout(supports);
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', height);
+
+    const defs = svgEl('defs');
+    const marker = svgEl('marker', {
+      id:'arrow',
+      markerWidth:'10',
+      markerHeight:'10',
+      refX:'8',
+      refY:'3',
+      orient:'auto',
+      markerUnits:'strokeWidth'
+    });
+    marker.appendChild(svgEl('path', {
+      d:'M0,0 L0,6 L9,3 z',
+      fill:'#222'
+    }));
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+
+    function addLine(x1,y1,x2,y2, arrow=true) {
+      const line = svgEl('line', {
+        x1, y1, x2, y2,
+        stroke:'#222',
+        'stroke-width':'2',
+        'stroke-linecap':'round'
+      });
+      if (arrow) line.setAttribute('marker-end','url(#arrow)');
+      svg.appendChild(line);
+    }
+
+    for (const [targetStr, groups] of Object.entries(supports)) {
+      const target = Number(targetStr);
+      const t = positions[target];
+
+      for (const group of groups) {
+        if (group.length === 1) {
+          const s = positions[group[0]];
+          const start = edgePoint(s.x,s.y,t.x,t.y,NODE_R);
+          const end = edgePoint(t.x,t.y,s.x,s.y,NODE_R);
+          addLine(start.x,start.y,end.x,end.y,true);
+        } else {
+          const pts = group.map(n => positions[n]);
+          const junctionX = pts.reduce((a,p)=>a+p.x,0)/pts.length;
+          const lowestY = Math.max(...pts.map(p=>p.y));
+          const gap = t.y-lowestY;
+          const junctionY = gap < 70 ? lowestY+35 : lowestY+gap*0.52;
+
+          group.forEach(n => {
+            const s = positions[n];
+            const start = edgePoint(s.x,s.y,junctionX,junctionY,NODE_R);
+            addLine(start.x,start.y,junctionX,junctionY,false);
+          });
+
+          svg.appendChild(svgEl('circle', {
+            cx:junctionX,
+            cy:junctionY,
+            r:'3',
+            fill:'#222'
+          }));
+
+          const end = edgePoint(t.x,t.y,junctionX,junctionY,NODE_R);
+          addLine(junctionX,junctionY,end.x,end.y,true);
+        }
+      }
+    }
+
+    for (const r of rows) {
+      const n = r.number;
+      const p = positions[n];
+
+      const g = svgEl('g', {
+        'data-node':n,
+        tabindex:'0',
+        role:'button',
+        'aria-label':`Proposición ${n}`
+      });
+      g.style.cursor = 'pointer';
+
+      const circle = svgEl('circle', {
+        cx:p.x, cy:p.y, r:NODE_R,
+        fill:'#fff',
+        stroke:'#111',
+        'stroke-width':'2.5'
+      });
+
+      const label = svgEl('text', {
+        x:p.x, y:p.y+6,
+        'text-anchor':'middle',
+        'font-size':'17',
+        'font-weight':'700',
+        'font-family':'-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif',
+        fill:'#111'
+      });
+      label.textContent = n;
+
+      g.append(circle,label);
+      svg.appendChild(g);
+
+      const select = () => selectNode(n);
+      g.addEventListener('click', select);
+      g.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          select();
+        }
+      });
+    }
+
+    if (!Object.values(supports).some(gs => gs.length)) {
+      const note = svgEl('text', {
+        x:width/2, y:height-40,
+        'text-anchor':'middle',
+        'font-size':'12',
+        fill:'#666'
+      });
+      note.textContent = 'No hay relaciones de apoyo.';
+      svg.appendChild(note);
+    }
+  }
+
+  function selectNode(number) {
+    selectedNode = number;
+    selectedTextEl.textContent = `${number}. ${graphTexts[number] ?? ''}`;
+
+    svg.querySelectorAll('g[data-node] circle').forEach(c => {
+      c.setAttribute('fill','#fff');
+      c.setAttribute('stroke','#111');
+    });
+
+    const g = svg.querySelector(`g[data-node="${number}"]`);
+    if (g) {
+      const c = g.querySelector('circle');
+      c.setAttribute('fill','#e9eef7');
+      c.setAttribute('stroke','#2f5f9f');
+    }
+  }
+
+  addBtn.addEventListener('click', () => {
+    if (rows.length < MAX) makeRow();
+  });
+
+  diagramBtn.addEventListener('click', () => {
+    try {
+      const {texts, supports} = collectData();
+      drawDiagram(texts, supports);
+      setMessage('Diagrama generado.', 'ok');
+    } catch (err) {
+      clearDiagram();
+      setMessage(err.message || String(err), 'error');
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    clearDiagram();
+    setMessage('');
+  });
+
+  makeRow();
+})();
+</script>
+</body>
+</html>
