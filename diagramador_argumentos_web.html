@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Diagramador de argumentos</title>
+<!-- versión web 3: apoyos conjuntos con nodo + -->
 <style>
   :root{
     --bg:#ffffff;
@@ -707,34 +708,72 @@
           addLine(start.x,start.y,end.x,end.y,true);
         } else {
           /*
-            Joint support:
-            Put the conjunction point close to ITS conclusion rather than at
-            the geometric midpoint of its premises. This prevents an unrelated
-            crossing arrow from passing through the conjunction dot and looking
-            as though it belongs to the joint support.
+            Joint support is represented by an explicit small '+' node.
+            Premises connect to that node WITHOUT arrowheads; exactly one
+            arrow leaves the '+' node toward the conclusion. This makes a
+            genuine conjunction visually different from an accidental crossing.
           */
           const jointGroups = groups.filter(g => g.length > 1);
           const jointIndex = jointGroups.indexOf(group);
-          const jointOffset = (jointIndex - (jointGroups.length - 1) / 2) * 34;
+          const jointOffset = (jointIndex - (jointGroups.length - 1) / 2) * 38;
 
           const junctionX = t.x + jointOffset;
-          const junctionY = t.y - 58;
+          const junctionY = t.y - 72;
+          const JOINT_R = 10;
 
           group.forEach(n => {
             const s = positions[n];
-            const start = edgePoint(s.x,s.y,junctionX,junctionY,NODE_R);
-            addLine(start.x,start.y,junctionX,junctionY,false);
+            const start = edgePoint(s.x, s.y, junctionX, junctionY, NODE_R);
+            const end = edgePoint(junctionX, junctionY, s.x, s.y, JOINT_R);
+            addLine(start.x, start.y, end.x, end.y, false);
           });
 
-          svg.appendChild(svgEl('circle', {
-            cx:junctionX,
-            cy:junctionY,
-            r:'3.5',
-            fill:'#222'
+          const jointG = svgEl('g', {
+            'data-joint-target': target,
+            'aria-label': `Apoyo conjunto de ${group.join(' + ')} a ${target}`
+          });
+
+          jointG.appendChild(svgEl('circle', {
+            cx: junctionX,
+            cy: junctionY,
+            r: JOINT_R,
+            fill: '#ffffff',
+            stroke: '#222222',
+            'stroke-width': '2'
           }));
 
-          const end = edgePoint(t.x,t.y,junctionX,junctionY,NODE_R);
-          addLine(junctionX,junctionY,end.x,end.y,true);
+          const plusH = svgEl('line', {
+            x1: junctionX - 4.5,
+            y1: junctionY,
+            x2: junctionX + 4.5,
+            y2: junctionY,
+            stroke: '#222222',
+            'stroke-width': '2',
+            'stroke-linecap': 'round'
+          });
+
+          const plusV = svgEl('line', {
+            x1: junctionX,
+            y1: junctionY - 4.5,
+            x2: junctionX,
+            y2: junctionY + 4.5,
+            stroke: '#222222',
+            'stroke-width': '2',
+            'stroke-linecap': 'round'
+          });
+
+          jointG.appendChild(plusH);
+          jointG.appendChild(plusV);
+          svg.appendChild(jointG);
+
+          const outStart = edgePoint(
+            junctionX, junctionY, t.x, t.y, JOINT_R
+          );
+          const end = edgePoint(
+            t.x, t.y, junctionX, junctionY, NODE_R
+          );
+
+          addLine(outStart.x, outStart.y, end.x, end.y, true);
         }
       }
     }
