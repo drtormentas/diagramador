@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Diagramador de argumentos</title>
-<!-- versión web 5: grupo de contenido + exportación PNG centrada y alta resolución -->
+<!-- versión web 6: enrutamiento de apoyos conjuntos para evitar nodos intermedios -->
 <style>
   :root{
     --bg:#ffffff;
@@ -560,6 +560,88 @@
     return {x:x1 + radius*dx/d, y:y1 + radius*dy/d};
   }
 
+  function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx*dx + dy*dy;
+
+    if (len2 === 0) return Math.hypot(px-x1, py-y1);
+
+    let t = ((px-x1)*dx + (py-y1)*dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+
+    const qx = x1 + t*dx;
+    const qy = y1 + t*dy;
+    return Math.hypot(px-qx, py-qy);
+  }
+
+  function jointPositionIsClear(group, target, x, y, positions) {
+    const CLEARANCE = NODE_R + 8;
+
+    // Every incoming joint-support line must avoid every other proposition node.
+    for (const source of group) {
+      const s = positions[source];
+
+      for (const [nodeStr, p] of Object.entries(positions)) {
+        const node = Number(nodeStr);
+        if (node === source || node === target) continue;
+
+        const d = pointToSegmentDistance(
+          p.x, p.y,
+          s.x, s.y,
+          x, y
+        );
+
+        if (d < CLEARANCE) return false;
+      }
+    }
+
+    // The outgoing line from the + node to the conclusion should also
+    // not pass through another proposition node.
+    const t = positions[target];
+    for (const [nodeStr, p] of Object.entries(positions)) {
+      const node = Number(nodeStr);
+      if (node === target) continue;
+
+      const d = pointToSegmentDistance(
+        p.x, p.y,
+        x, y,
+        t.x, t.y
+      );
+
+      if (d < CLEARANCE) return false;
+    }
+
+    return true;
+  }
+
+  function chooseJointPosition(group, target, baseOffset, positions) {
+    const t = positions[target];
+    const y = t.y - 72;
+
+    // Prefer the usual centered position, then progressively try nearby
+    // positions to either side. This handles cases like 2 -> 3 and
+    // (2 + 3) -> 4, where a centered line from 2 would pass through 3.
+    const shifts = [
+      0,
+      55, -55,
+      85, -85,
+      120, -120,
+      160, -160,
+      210, -210
+    ];
+
+    for (const shift of shifts) {
+      const x = t.x + baseOffset + shift;
+      if (jointPositionIsClear(group, target, x, y, positions)) {
+        return {x, y};
+      }
+    }
+
+    // Fallback: put it clearly to the right rather than allowing a hidden line.
+    return {x: t.x + baseOffset + 210, y};
+  }
+
   function svgEl(name, attrs={}) {
     const el = document.createElementNS('http://www.w3.org/2000/svg', name);
     for (const [k,v] of Object.entries(attrs)) el.setAttribute(k, v);
@@ -755,8 +837,15 @@
           const jointIndex = jointGroups.indexOf(group);
           const jointOffset = (jointIndex - (jointGroups.length - 1) / 2) * 38;
 
-          const junctionX = t.x + jointOffset;
-          const junctionY = t.y - 72;
+          const jointPos = chooseJointPosition(
+            group,
+            target,
+            jointOffset,
+            positions
+          );
+
+          const junctionX = jointPos.x;
+          const junctionY = jointPos.y;
           const JOINT_R = 10;
 
           group.forEach(n => {
