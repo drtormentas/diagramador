@@ -697,18 +697,28 @@
       const target = Number(targetStr);
       const t = positions[target];
 
-      for (const group of groups) {
+      for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+        const group = groups[groupIndex];
+
         if (group.length === 1) {
           const s = positions[group[0]];
           const start = edgePoint(s.x,s.y,t.x,t.y,NODE_R);
           const end = edgePoint(t.x,t.y,s.x,s.y,NODE_R);
           addLine(start.x,start.y,end.x,end.y,true);
         } else {
-          const pts = group.map(n => positions[n]);
-          const junctionX = pts.reduce((a,p)=>a+p.x,0)/pts.length;
-          const lowestY = Math.max(...pts.map(p=>p.y));
-          const gap = t.y-lowestY;
-          const junctionY = gap < 70 ? lowestY+35 : lowestY+gap*0.52;
+          /*
+            Joint support:
+            Put the conjunction point close to ITS conclusion rather than at
+            the geometric midpoint of its premises. This prevents an unrelated
+            crossing arrow from passing through the conjunction dot and looking
+            as though it belongs to the joint support.
+          */
+          const jointGroups = groups.filter(g => g.length > 1);
+          const jointIndex = jointGroups.indexOf(group);
+          const jointOffset = (jointIndex - (jointGroups.length - 1) / 2) * 34;
+
+          const junctionX = t.x + jointOffset;
+          const junctionY = t.y - 58;
 
           group.forEach(n => {
             const s = positions[n];
@@ -719,7 +729,7 @@
           svg.appendChild(svgEl('circle', {
             cx:junctionX,
             cy:junctionY,
-            r:'3',
+            r:'3.5',
             fill:'#222'
           }));
 
